@@ -137,7 +137,12 @@ class StructBlock(graphene.ObjectType):
         stream_blocks = []
         for name, value in self.value.items():
             block = self.block.child_blocks[name]
-            if not issubclass(type(block), blocks.StreamBlock):
+            if (
+              issubclass(type(block), wagtail.core.blocks.ChooserBlock)
+              and hasattr(value, 'id')
+            ):
+                value = block.to_python(value.id)
+            elif not issubclass(type(block), blocks.StreamBlock):
                 value = block.to_python(value)
 
             stream_blocks.append(StructBlockItem(name, block, value))
@@ -150,12 +155,28 @@ class StreamBlock(StructBlock):
 
     def resolve_blocks(self, info, **kwargs):
         stream_blocks = []
-        for field in self.value.stream_data:
-            block = self.value.stream_block.child_blocks[field["type"]]
-            if not issubclass(type(block), blocks.StructBlock):
-                value = block.to_python(field["value"])
 
-            stream_blocks.append(StructBlockItem(field["type"], block, field["value"]))
+        if issubclass(type(self.value), wagtail.core.blocks.stream_block.StreamValue):
+          # self: StreamChild, block: StreamBlock, value: StreamValue
+          stream_data = self.value.stream_data
+          child_blocks = self.value.stream_block.child_blocks
+        else:
+          # This occurs when StreamBlock is child of StructBlock
+          # self: StructBlockItem, block: StreamBlock, value: list
+          stream_data = self.value
+          child_blocks = self.block.child_blocks
+
+        for field in stream_data:
+            block = child_blocks[field["type"]]
+            value = field['value']
+            if (
+              issubclass(type(block), wagtail.core.blocks.ChooserBlock)
+              or not issubclass(type(block), blocks.StructBlock)
+            ):
+              value = block.to_python(value)
+
+            stream_blocks.append(StructBlockItem(field["type"], block, value))
+
         return stream_blocks
 
 
